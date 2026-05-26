@@ -26,7 +26,7 @@ Le modèle de base configuré est llama3.2 (Màj de Avril 2026) [voir config.py]
 
 # Architecture
 
-Tout est fait pour être paramètrable et customizable 
+Tout est fait pour être paramètrable et customizable ; il faut commencer par ajouter les différent document dans le répértoire ```document```. Format *.pdf*, *.txt*, *.md*
 
 ## Créer la base chromeDB
 
@@ -47,6 +47,21 @@ python3 rag/retriever.py "Quel est l'intitulé de l'article 27 de la RGPD ?
 ```bash
 uvicorn main:app --reload
 ```
+
+# ! Axe d'Amélioration !
+
+1. La recherche Sémantique est encore assez perfectible. Il faut encore travailler sur la manière de découper le texte vis-à-vis du format particulier des textes de loi (normé mais variablité). 
+Pour l'instant cela se fait de manière assez trivial sur une fenêtre de contexte
+
+2. Tester d'autre modèle d'embedding (notamment multilingue), pour l'instant testé "nomic-embed-text" et "bge-m3". 
+
+3. Fine-tuned un modèle d'embedding sur des paires (query text, chunks text pertinents)
+
+4. Ajout d'un reranker
+
+5. Fine-tuning des poids RRF 
+
+6. Tokenisation avancée (spaCy)
 
 # Side Note Technique
 
