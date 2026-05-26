@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Assistant Juridique</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e2e2e2; display: flex; flex-direction: column; height: 100vh; }
+    header { padding: 14px 20px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 15px; font-weight: 500; }
+    #status { font-size: 12px; color: #666; }
+    #messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .msg { max-width: 75%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+    .msg.user { background: #1e3a2e; color: #d4edda; align-self: flex-end; border-radius: 12px 12px 2px 12px; }
+    .msg.bot  { background: #1a1a1a; color: #e2e2e2; align-self: flex-start; border-radius: 12px 12px 12px 2px; border: 1px solid #2a2a2a; }
+    .msg.bot .meta { font-size: 11px; color: #555; margin-top: 8px; }
+    .msg.error { background: #2a1515; color: #f09595; }
+    #input-area { padding: 16px 20px; border-top: 1px solid #222; display: flex; gap: 10px; }
+    #input { flex: 1; background: #1a1a1a; color: #e2e2e2; border: 1px solid #333; border-radius: 8px; padding: 10px 14px; font-size: 14px; resize: none; height: 44px; font-family: inherit; }
+    #input:focus { outline: none; border-color: #2d6a4f; }
+    #send { padding: 10px 20px; background: #2d6a4f; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+    #send:disabled { opacity: 0.4; cursor: not-allowed; }
+    #api-key { background: #1a1a1a; color: #e2e2e2; border: 1px solid #333; border-radius: 6px; padding: 6px 10px; font-size: 12px; width: 200px; }
+    .cursor { display: inline-block; width: 2px; height: 14px; background: #e2e2e2; animation: blink .7s step-end infinite; vertical-align: text-bottom; margin-left: 1px; }
+    @keyframes blink { 50% { opacity: 0 } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Assistant Juridique Interne</h1>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <input id="api-key" placeholder="X-API-Key" value="secret-key-user1">
+      <span id="status">Prêt</span>
+    </div>
+  </header>
+
+  <div id="messages">
+    <div class="msg bot">Bonjour. Posez-moi une question sur vos documents juridiques. Je ne répondrai qu'à partir des documents indexés.</div>
+  </div>
+
+  <div id="input-area">
+    <textarea id="input" placeholder="Votre question juridique..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send();}"></textarea>
+    <button id="send" onclick="send()">Envoyer</button>
+  </div>
+
+  <script>
+    const messages = document.getElementById('messages');
+    const input    = document.getElementById('input');
+    const sendBtn  = document.getElementById('send');
+    const status   = document.getElementById('status');
+
+    function addMessage(text, type) {
+      const div = document.createElement('div');
+      div.className = `msg ${type}`;
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+      return div;
+    }
+
+    async function send() {
+      const message = input.value.trim();
+      if (!message || sendBtn.disabled) return;
+
+      const apiKey = document.getElementById('api-key').value;
+      input.value = '';
+      sendBtn.disabled = true;
+      status.textContent = 'En cours...';
+
+      addMessage(message, 'user');
+
+      const botDiv = document.createElement('div');
+      botDiv.className = 'msg bot';
+      const textNode = document.createTextNode('');
+      const cursor   = document.createElement('span');
+      cursor.className = 'cursor';
+      botDiv.appendChild(textNode);
+      botDiv.appendChild(cursor);
+      messages.appendChild(botDiv);
+
+      let fullText = '';
+
+      try {
+        const response = await fetch('http://localhost:8000/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+          body: JSON.stringify({ message }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          botDiv.className = 'msg error';
+          textNode.nodeValue = `Erreur ${response.status} : ${err.detail}`;
+          cursor.remove();
+          return;
+        }
+
+        const reader  = response.body.getReader();
+        const decoder = new TextDecoder();
+        let   buffer  = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop();
+
+          for (const part of parts) {
+            if (!part.startsWith('data: ')) continue;
+            try {
+              const data = JSON.parse(part.slice(6));
+              if (data.error) {
+                textNode.nodeValue = data.error;
+                botDiv.className = 'msg error';
+              } else if (data.token) {
+                fullText += data.token;
+                textNode.nodeValue = fullText;
+                messages.scrollTop = messages.scrollHeight;
+              } else if (data.done) {
+                cursor.remove();
+                // Ajouter les métadonnées
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                const parts = [];
+                if (data.latency_ms) parts.push(`${data.latency_ms}ms`);
+                if (data.cached)     parts.push('depuis le cache');
+                if (parts.length)    meta.textContent = parts.join(' · ');
+                botDiv.appendChild(meta);
+              }
+            } catch {}
+          }
+        }
+      } catch (err) {
+        botDiv.className = 'msg error';
+        textNode.nodeValue = `Erreur réseau : ${err.message}`;
+        cursor.remove();
+      } finally {
+        sendBtn.disabled = false;
+        status.textContent = 'Prêt';
+        input.focus();
+      }
+    }
+  </script>
+</body>
+</html>

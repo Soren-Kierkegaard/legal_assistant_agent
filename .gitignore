@@ -1,0 +1,5 @@
+.env
+chroma_db
+bm25_db
+.ipynb_checkpoints
+__pycache__
