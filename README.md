@@ -1,11 +1,12 @@
-# Architecture
-
+# Repertoire (Arborescence)
+```
 legal_assistant/
 ├── main.py           # API FastAPI
 ├── streaming.py      # SSE
 ├── limiter.py        # Rate limiting
 ├── cache.py          # Semantic cache
 ├── security.py       # Guards
+├── bm25.py           # Best Match 25 implementation
 ├── rag/
 │   ├── ingestor.py   # Indexation des documents
 │   ├── retriever.py  # Recherche vectorielle
@@ -15,9 +16,43 @@ legal_assistant/
     └── prompts.yaml  # Stockage du system prompt et rag instruction
 └── ui/
     └── index.html    # Interface chat avec streaming
+```
 
+# Pré-requis
 
-# Les permissions CORS
+Avoir ollama d'installer en local.
+
+Le modèle de base configuré est llama3.2 (Màj de Avril 2026) [voir config.py]
+
+# Architecture
+
+Tout est fait pour être paramètrable et customizable 
+
+## Créer la base chromeDB
+
+```bash
+python3 rag/ingestor.py
+```
+
+Cela créer les répertoire **chrome_db** et **bm25_db**
+
+## Tester la recherche hybride (RAG+BM25)
+
+```bash
+python3 rag/retriever.py "Quel est l'intitulé de l'article 27 de la RGPD ?
+```
+
+# Lancer l'Application (Interface)
+
+```bash
+uvicorn main:app --reload
+```
+
+# Side Note Technique
+
+Peut-être trivial pour certain, mais cela a été une source de problème et confusion.
+
+## Les permissions CORS
 CORS (Cross-Origin Resource Sharing) est le mécanisme qui contrôle si un navigateur a le droit de faire des requêtes vers un serveur situé sur une origine différente (protocole, domaine ou port différent). 
 
 Par exemple, si un frontend tourne sur http://localhost:8080 et l' API FastAPI sur http://localhost, ce sont deux origines différentes. 
@@ -29,7 +64,7 @@ Origin: http://localhost:8080
 Access-Control-Request-Method: POST
 
 ## Le rôle du middleware CORS ?
-Un middleware est une couche de code qui s'exécute avant et/ou après chaque requête, de manière transparente, sans que vous ayez à modifier chaque route.
+Un middleware est une couche de code qui s'exécute avant et/ou après chaque requête, de manière transparente, sans avoir à modifier chaque route.
 
 Il joue deux rôles :
 
