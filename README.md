@@ -48,20 +48,31 @@ python3 rag/retriever.py "Quel est l'intitulé de l'article 27 de la RGPD ?
 uvicorn main:app --reload
 ```
 
+# Modifications (17/06/2026)
+- Modification de la méthode de chunking afin de découper le texte selon certain pattern correspondant : chapitre, section et article, ....
+
+- Modification du `read_pdf` qui utilise désormais la lib "fitz" qui permet de lire plus proprement page par page les PDF.
+
+- Nouvelle stratégie pour la recherche vectorielle:
+    - Filtrage par métadonnées ( ou pre-filtering ).
+        De fait dans chromeDB, j'insère désormais d'avantages de métadonnées qui me disent a quel article ou chapitre entre autre appartient chaque chunk de texte.
+
 # ! Axe d'Amélioration !
 
 1. La recherche Sémantique est encore assez perfectible. Il faut encore travailler sur la manière de découper le texte vis-à-vis du format particulier des textes de loi (normé mais variablité). 
-Pour l'instant cela se fait de manière assez trivial sur une fenêtre de contexte
+Pour l'instant cela se fait de manière assez trivial sur une fenêtre de contexte ✅
 
-2. Tester d'autre modèle d'embedding (notamment multilingue), pour l'instant testé "nomic-embed-text" et "bge-m3". 
+3. Tester d'autre modèle d'embedding (notamment multilingue), pour l'instant testé "nomic-embed-text" et "bge-m3". ✅
 
-3. Fine-tuned un modèle d'embedding sur des paires (query text, chunks text pertinents)
+4. Fine-tuned un modèle d'embedding sur des paires (query text, chunks text pertinents) ❌
 
-4. Ajout d'un reranker
+5. Ajout d'un reranker 👉
 
-5. Fine-tuning des poids RRF 
+6. Fine-tuning des poids RRF ❌
 
-6. Tokenisation avancée (spaCy)
+7. Tokenisation avancée (spaCy) ❌
+
+8. Limitation fondamentale du RAG vectoriel pour les question structurelles: "combien d'articles" ou "liste tous les chapitres", "quelles sections existent" tec. Ces questions ne cherchent pas un contenu sémantique — elles interrogent la structure du document. ==> la réponse est dans les métadonnées ChromaDB. Il faut détecter ce type de question et répondre directement depuis la base. 👉
 
 # Side Note Technique
 
