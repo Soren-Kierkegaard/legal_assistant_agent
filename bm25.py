@@ -53,29 +53,31 @@ class BM25Retriever:
             pickle.dump({
                 "bm25": self.bm25,
                 "chunks": self.chunks,
-                "chunk_to_id": self.chunk_to_id  # ✅ Sauvegarder le mapping
+                "chunk_to_id": self.chunk_to_id  # Sauvegarder le mapping
             }, f)
             
         print(f"[BM25] Index sauvegardé : {len(self.chunks)} chunks dans {BM25_INDEX_PATH}/bm25_index.pkl")
     
     def index(self, chunks: list[str], chunk_ids: list[str]):
-        """
-        Crée l'index BM25 avec mapping vers ChromaDB IDs.
         
-        Args:
-            chunks: liste des textes
-            chunk_ids: liste parallèle des IDs ChromaDB
         """
+            Crée l'index BM25 avec mapping vers ChromaDB IDs.
+            
+            Args:
+                chunks: liste des textes
+                chunk_ids: liste parallèle des IDs ChromaDB
+        """
+        
         import re
         tokenized_chunks = [
-            re.findall(r'\b\w+\b', chunk.lower())
+            re.findall(r'\b\w+\b', chunk['contenu'].lower())
             for chunk in chunks
         ]
         self.bm25 = BM25Okapi(tokenized_chunks)
         self.chunks = chunks
         
-        # ✅ Créer le mapping
-        self.chunk_to_id = {chunk: cid for chunk, cid in zip(chunks, chunk_ids)}
+        # Créer le mapping
+        self.chunk_to_id = {chunk['contenu']: cid for chunk, cid in zip(chunks, chunk_ids)}
         
         self.save()
     
@@ -83,8 +85,8 @@ class BM25Retriever:
         
         """
             Recherche BM25. Retourne [(chunk, id, score), ...].
-        
         """
+        
         if not self.bm25:
             return []
         

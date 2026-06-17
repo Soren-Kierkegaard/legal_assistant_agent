@@ -112,7 +112,8 @@ def reciprocal_rank_fusion(
     })
     
     print("##########")
-    #print(bm25_results)
+    print("bm25_results:")
+    print(bm25_results)
     
     # Ajouter les scores vectoriels
     for rank, data in enumerate(vectorial_results):
@@ -128,8 +129,9 @@ def reciprocal_rank_fusion(
     # Ajouter les scores BM25
     for rank, (chunk, doc_id, score) in enumerate(bm25_results):
 
-        rrf_scores[doc_id]["chunk"] = chunk
-        rrf_scores[doc_id]["id"] = doc_id
+        #rrf_scores[doc_id]["chunk"] = chunk
+        #rrf_scores[doc_id]["id"] = doc_id
+        #rrf_scores[doc_id]["metadata"] =
         rrf_scores[doc_id]["bm25"] = score
         rrf_scores[doc_id]["rrf"] += 1 / (k + rank + 1)
     
@@ -142,6 +144,7 @@ def reciprocal_rank_fusion(
 
     #print(f"Sample: {sorted_results[0]}") # (id, {'chunk': id: vectorial_score: bm25: rrf: content: }
 
+    print(f"Sorted res: {sorted_results[0]}")
     '''
     return [
         {
@@ -153,10 +156,29 @@ def reciprocal_rank_fusion(
         }
         for chunk, scores, src in sorted_results
     ]'''
-    return sorted_results
+    #return sorted_results
+    #return rrf_scores
+    return [
+        {
+            "content": chunk['chunk'],
+            "source": chunk['source'],
+            "vectorial_score": chunk["vectorial"], # Similarity
+            "bm25_score": chunk["bm25"],
+            "rrf_score": chunk['rrf'],
+        }for id_, chunk in sorted_results]
 
 #
+import re
+def extract_article_reference(question: str) -> str | None:
+    
+    """
+        Détecte si la question cite un article précis, un chapitre : 'article 17', 'art. 5'...
+    """
+    
+    match = re.search(r'\bart(?:icle)?\.?\s*(\d+|\w+)\b|\bchap(?:itre)?\.?\s*(\d+|\w+)\b', question, re.IGNORECASE)
 
+    return match.group(1) if match else None
+    
 def hybrid_search(query: str) -> list[dict]:
     
     """
@@ -166,8 +188,9 @@ def hybrid_search(query: str) -> list[dict]:
     print(f"\n[SEARCH] Requête : {query}")
 
     # 0. Charger l'index BM25 sur le disque ===> (préload à l'initialisation)
-    #bm25_retriever.load()
+    bm25_retriever.load()
 
+    print(f"1er Chunk de BM25: {bm25_retriever.chunks[0]}")
     # 0. Vérif
     if len(bm25_retriever.chunks) == 0:
         raise FileNotFoundError(f"Impossible de charger bm25_index.pkl de {BM25_INDEX_PATH} manquant ou le fichier n'existe pas")
@@ -177,36 +200,67 @@ def hybrid_search(query: str) -> list[dict]:
     print(f"  BM25 : {len(bm25_results)} résultats")
     
     # 2. Recherche vectorielle
+
+    ## 2.1 Embedding de la question
     embedding = ollama.embed(model = config.EMBED_MODEL, input = query)["embeddings"][0]
-    results = collection.query(query_embeddings = [embedding],
+    
+    ## 2.2 Pré-filtrage sur la base des métadonnées
+    ref = extract_article_reference(question)
+
+    '''
+        results = collection.query(query_embeddings = [embedding],
                                n_results = config.TOP_K,
                                include = ["documents", "metadatas", "distances"])
+    '''
+    #
+    query_params = {
+        "query_embeddings": [embedding],
+        "n_results": config.TOP_K,
+        "include": ["documents", "metadatas", "distances"],
+    }
 
-    print(f"#Nb result find: {len(results)}, {results['distances']}, {results.keys()}")
+    # Si un article est mentionné → filtrer directement sur les métadonnées
+    if ref:
+        print(f"  [RAG] Article détecté dans la question : {ref}")
+        query_params["where"] = {"article_numero": {"$eq": ref}}
+
+    # Query la db
+    results = collection.query(**query_params)
+    
+    print(f"#Nb resultat par recherche vec: {len(results)}, similarité distance: {results['distances']}, keys: {results.keys()}")
+
+    print("results:")
+    with open('logs', 'w') as f:
+        f.write(str(results))
 
     chunks = []
     for doc, meta, dist, doc_id in zip(results["documents"][0], results["metadatas"][0], results["distances"][0], results["ids"][0]):
         
-        similarity = 1 - dist  # convertir distance → similarité
+        #similarity = 1 - dist  # convertir distance → similarité --> déja défini sur cosinus sim et non Squarred L2 ou inner product
         
-        if similarity >= config.MIN_SCORE:
+        if dist >= config.MIN_SCORE:
             chunks.append({
                 "content":    doc,
-                "source":     meta.get("source", "inconnu"), # Si non trouvé: inconnu
+                #"source":     meta.get("source", "inconnu"), # Si non trouvé: inconnu
+                "source":    meta,
                 "id":        doc_id,
-                "similarity": round(similarity, 3)
+                "similarity": round(dist, 3)
             })
     
     print(f"  Vectoriel : {len(chunks)} résultats")
     
     # 3. Fusion RRF
+    print(f"chunk vectoriel: {chunks}")
+          
     results = reciprocal_rank_fusion(chunks, bm25_results)
-    
+
+    """
     print(f"\n[RÉSULTATS] {len(results)} résultats fusionnés (RRF):\n")
     
     for i, result in enumerate(results, 1):
         print(f"  {i}. RRF={result[1]['rrf']:.4f} | Vec={result[1]['vectorial']:.4f} | BM25={result[1]['bm25']:.4f}")
         print(f"     {result[1]['chunk'][:100]}...\n")
+    """
     
     return results
 # ── Assemblage du contexte ─────────────────────────────────────────────────
@@ -222,12 +276,16 @@ def build_context(chunks: list[dict]) -> str:
 
     parts = []
     for i, chunk in enumerate(chunks, 1):
+
+        src = '\n'.join([f"{k}: {v}" for k, v in chunk['source'].items()])
         parts.append(
-            f"[Document {i} — Source : {chunk[1]['source']} " # chunk[0] id_chroma/idbm25
-            f"(similarité : {chunk[1]['vectorial']})]"
-            f"\n{chunk[1]['chunk']}"
+            f"Document {i} — Source : {src}" # chunk[0] id_chroma/idbm25
+            #f"(similarité : {chunk['vectorial_score']})"
+            #f"\n{chunk[i]['chunk']}"
+            f"\n{chunk['content']}"
         )
-        
+
+    print(f'contexte finale : {parts}')
     return "\n\n---\n\n".join(parts)
 
 # ── Pipeline RAG complet ───────────────────────────────────────────────────
@@ -246,13 +304,13 @@ def rag_stream(question: str) -> Generator[str, None, None]:
     chunks = hybrid_search(question)    
 
     print(f"  [RAG] {len(chunks)} chunks récupérés pour : '{question[:50]}'")
-    for _, c in chunks:
-        #print(f"    → {c['source']} (similarité={c['similarity']})")
 
-        print(c)
-        #print(f"    → {c['source']} (score={c['vectorial_score']}, {c['bm25_score']}, {c['rrf_score']})")
-        print(f"    → {c['source']} (score={c['vectorial']}, {c['bm25']}, {c['rrf']})")    
-        print(f"Extrait: {c['chunk'][:200]}")
+    #print(chunks)
+    #for _, c in chunks:
+    for c in chunks:
+
+        print(f"    → {c['source']} (score={c['vectorial_score']})")  
+        print(f"Extrait: {c['content'][:200]}")
         print(f"")
 
     # Étape 2 : refus si aucun contexte
@@ -298,32 +356,4 @@ if __name__ == "__main__":
     for token in rag_stream(question):
         print(token, end="", flush=True)
     print()
-
-"""
-Diagnostic : Mauvaises citations, réponses incohérentes alors que les chunks sont récupérés
-
-identifier où ça casse :
-
-Étape	    Tester
-Chunking	Les chunks contiennent-ils la bonne info ?	Loggez les chunks récupérés et inspecter
-
-Retrieval	Le bon chunk est-il dans le top-k ?	Augmenter top_k de 3 à 10 et testez
-
-Ranking	    Le modèle confond les articles	Vérifier si plusieurs articles similaires sont dans le context
-
-Prompt	    Le prompt ne force pas la citation	Tester avec un prompt plus strict
-
-Optimisations ?
-Pour améliorer encore :
-
-Fine-tuning des poids RRF :
-
-rrf = (0.6 * vectorial_rrf) + (0.4 * bm25_rrf)  # Pondération custom
-
-Ajouter un reranker (cross-encoder) après RRF :
-
-from sentence_transformers import CrossEncoder
-reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-12-v2")
-
-Tokenisation avancée (spaCy) pour mieux capturer les termes juridiques.
-"""
+#FIN

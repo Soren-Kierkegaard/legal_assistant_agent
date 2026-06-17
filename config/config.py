@@ -13,5 +13,5 @@ CHROMA_DIR     = "./chroma_db"
 COLLECTION     = "legal_docs"
 #EMBED_MODEL    = "nomic-embed-text"
 EMBED_MODEL    = "bge-m3" #8192 Tokens
-CHUNK_SIZE     = 1024    # caractères par chunk
-CHUNK_OVERLAP  = 128    # chevauchement entre chunks (préserve le contexte)
+#CHUNK_SIZE     = 1024    # caractères par chunk
+#CHUNK_OVERLAP  = 128    # chevauchement entre chunks (préserve le contexte)
